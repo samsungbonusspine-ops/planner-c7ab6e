@@ -2469,7 +2469,7 @@ function buildFurn(f, group, edgeMat){
     tex.encoding = THREE.sRGBEncoding;
     const pm = new THREE.MeshLambertMaterial({map: tex});
     const cm = mat(f.c);
-    const mm = new THREE.Mesh(new THREE.BoxGeometry(f.w, f.h, f.d), [pm, pm, cm, cm, pm, pm]);
+    const mm = new THREE.Mesh(new THREE.BoxGeometry(f.w, f.h, f.d), [pm, pm, pm, cm, pm, pm]); // 윗면(+y)에도 사진 — 조감도 캡쳐용
     mm.position.set(0, f.h/2 + 0.5, 0);
     mm.castShadow = true; mm.receiveShadow = true;
     g.add(mm);
