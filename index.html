@@ -1859,7 +1859,10 @@ function ensure3d(){
     pts.set(e.pointerId, {x:e.clientX, y:e.clientY, sx:e.clientX, sy:e.clientY, btn:e.button, moved:false});
     if (pts.size === 2){
       const p = [...pts.values()];
-      pinch3 = {d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), dist: orbit.dist};
+      pinch3 = {
+        d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), dist: orbit.dist,
+        cx: (p[0].x + p[1].x) / 2, cy: (p[0].y + p[1].y) / 2,   // 두 손가락 중심 → 끌면 화면 이동
+      };
     }
   });
   el.addEventListener('pointermove', e => {
@@ -1878,6 +1881,15 @@ function ensure3d(){
       const p = [...pts.values()];
       const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
       orbit.dist = clamp(pinch3.dist * pinch3.d / d, 250, 12000);
+      // 두 손가락을 함께 끌면 그 방향으로 화면 이동 (모바일 팬)
+      const cx = (p[0].x + p[1].x) / 2, cy = (p[0].y + p[1].y) / 2;
+      const mdx = cx - pinch3.cx, mdy = cy - pinch3.cy;
+      pinch3.cx = cx; pinch3.cy = cy;
+      const k = orbit.dist * 0.0016;
+      const rx = Math.cos(orbit.yaw), rz = -Math.sin(orbit.yaw);
+      const fx = -Math.sin(orbit.yaw), fz = -Math.cos(orbit.yaw);
+      orbit.tx -= (rx * mdx - fx * mdy) * k;
+      orbit.tz -= (rz * mdx - fz * mdy) * k;
       return;
     }
     if (prev.btn === 2 || e.shiftKey){
@@ -2084,7 +2096,7 @@ mm.addEventListener('pointerdown', e => {
   walk.target = null;
 });
 document.addEventListener('keydown', e => {
-  if (view !== 'walk') return;
+  if (view !== 'walk' && view !== '3d') return;   // 3d 조감도에서는 방향키로 화면 이동
   const tag = document.activeElement && document.activeElement.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
   walk.keys[e.key.toLowerCase()] = true;
@@ -2607,6 +2619,15 @@ function loop(t){
       walk.z + Math.cos(walk.yaw) * Math.cos(walk.pitch) * 100
     );
   } else {
+    // 방향키로 화면 이동 (조감도 팬)
+    const ak = walk.keys;
+    const px = (ak['arrowright'] ? 1 : 0) - (ak['arrowleft'] ? 1 : 0);
+    const pf = (ak['arrowup'] ? 1 : 0) - (ak['arrowdown'] ? 1 : 0);
+    if (px || pf){
+      const k = orbit.dist * 0.9 * dt;
+      orbit.tx += (Math.cos(orbit.yaw) * px - Math.sin(orbit.yaw) * pf) * k;
+      orbit.tz += (-Math.sin(orbit.yaw) * px - Math.cos(orbit.yaw) * pf) * k;
+    }
     camera.position.set(
       orbit.tx + orbit.dist * Math.cos(orbit.pitch) * Math.sin(orbit.yaw),
       orbit.dist * Math.sin(orbit.pitch),
@@ -2643,7 +2664,7 @@ function setView(v){
       R.camera.fov = 50;
       const b = planBounds();
       R.orbit.tx = b.x + b.w/2; R.orbit.tz = b.y + b.h/2;
-      hint.textContent = '드래그: 회전 · 휠/핀치: 확대 · 우클릭(또는 Shift) 드래그: 이동';
+      hint.textContent = '드래그: 회전 · 휠/핀치: 확대 · 이동: 두 손가락 드래그·방향키·Shift 드래그';
     }
     R.camera.updateProjectionMatrix();
     build3d();
