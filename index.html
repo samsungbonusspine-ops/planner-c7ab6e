@@ -234,6 +234,7 @@ button:focus-visible, input:focus-visible{outline:2px solid var(--accent); outli
         <div class="btnrow" style="margin-top:6px">
           <button class="btn" id="planBtn">원본 평면도</button>
           <button class="btn" id="tourBtn">동영상 둘러보기</button>
+          <button class="btn" id="roomShotsBtn">방별 캡쳐 저장</button>
           <button class="btn" id="undoBtn">↩ 되돌리기</button>
           <button class="btn" id="redoBtn">↪ 다시 실행</button>
         </div>
@@ -2714,6 +2715,73 @@ document.addEventListener('keydown', e => {
 });
 $('#planBtn').addEventListener('click', () => openGallery((window.PHOTOS || {}).plan || [], 0));
 $('#tourBtn').addEventListener('click', () => openGallery((window.PHOTOS || {}).tour || [], 0));
+
+/* ---------- 방별 캡쳐: 방마다 보기 좋은 각도로 찍어 한 장의 모음 이미지로 저장 ---------- */
+$('#roomShotsBtn').addEventListener('click', async () => {
+  if (view !== '3d') setView('3d');
+  const {renderer, scene, camera, orbit} = R;
+  const wasFull = state.fullWalls;
+  if (wasFull){ state.fullWalls = false; build3d(); }   // 벽을 낮춰야 방 안이 보인다
+  // 사진 텍스처가 전부 로드된 뒤에 찍는다 (재구성 직후엔 이미지가 아직 검게 나옴)
+  await new Promise(r => {
+    let done = false;
+    const fin = () => { if (!done){ done = true; lm.onLoad = prev; r(); } };
+    const lm = THREE.DefaultLoadingManager;
+    const prev = lm.onLoad;
+    lm.onLoad = fin;
+    setTimeout(fin, wasFull ? 3500 : 300);
+  });
+  const saved = {tx: orbit.tx, tz: orbit.tz, dist: orbit.dist, yaw: orbit.yaw, pitch: orbit.pitch};
+  const cellW = 960, cellH = 640, pad = 16, labelH = 46, headH = 64;
+  const rooms = state.rooms.filter(r => r.w * r.h >= 15000);   // 1.5㎡ 미만 자투리 제외
+  const b = planBounds();
+  const shots = [{name: '전체 조감도', cx: b.x + b.w/2, cz: b.y + b.h/2, dist: Math.max(b.w, b.h) * 1.4, note: ''}]
+    .concat(rooms.map(r => ({
+      name: r.name, cx: r.x + r.w/2, cz: r.y + r.h/2,
+      dist: Math.max(r.w, r.h) * 1.55 + 170,
+      note: (r.w/100).toFixed(1) + ' × ' + (r.h/100).toFixed(1) + ' m'
+    })));
+  const cols = 2, rows = Math.ceil(shots.length / cols);
+  const sheet = document.createElement('canvas');
+  sheet.width = cols * (cellW + pad) + pad;
+  sheet.height = headH + rows * (cellH + labelH + pad) + pad;
+  const g = sheet.getContext('2d');
+  g.fillStyle = '#F5F6F8'; g.fillRect(0, 0, sheet.width, sheet.height);
+  g.fillStyle = '#15181D'; g.font = 'bold 32px -apple-system, sans-serif';
+  g.fillText('우리집 가구 배치 — 방별 조감도', pad + 4, 44);
+  renderer.setSize(cellW, cellH, false);
+  camera.aspect = cellW / cellH; camera.updateProjectionMatrix();
+  shots.forEach((s, i) => {
+    orbit.tx = s.cx; orbit.tz = s.cz;
+    orbit.dist = clamp(s.dist, 250, 12000);
+    orbit.yaw = -0.55; orbit.pitch = 1.02;   // 살짝 비스듬한 조감 각도
+    camera.position.set(
+      orbit.tx + orbit.dist * Math.cos(orbit.pitch) * Math.sin(orbit.yaw),
+      orbit.dist * Math.sin(orbit.pitch),
+      orbit.tz + orbit.dist * Math.cos(orbit.pitch) * Math.cos(orbit.yaw));
+    camera.lookAt(orbit.tx, 0, orbit.tz);
+    renderer.render(scene, camera);
+    const x = pad + (i % cols) * (cellW + pad);
+    const y = headH + Math.floor(i / cols) * (cellH + labelH + pad);
+    g.fillStyle = '#FFFFFF'; g.fillRect(x, y, cellW, cellH);
+    g.drawImage(renderer.domElement, x, y, cellW, cellH);
+    g.strokeStyle = '#D8DCE2'; g.strokeRect(x + 0.5, y + 0.5, cellW, cellH);
+    g.fillStyle = '#15181D'; g.font = 'bold 26px -apple-system, sans-serif';
+    g.fillText(s.name + (s.note ? '   ·   ' + s.note : ''), x + 10, y + cellH + 34);
+  });
+  // 원상 복구
+  Object.assign(orbit, saved);
+  resize3d();
+  if (wasFull){ state.fullWalls = true; build3d(); }
+  sheet.toBlob(bl => {
+    if (!bl) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(bl);
+    a.download = '우리집-방별-가구배치.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }, 'image/png');
+});
 
 /* ---------- 구조 잠금 ---------- */
 function updateLockUI(){
