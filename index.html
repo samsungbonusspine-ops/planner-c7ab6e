@@ -2827,21 +2827,15 @@ async function shareCheck(){
     const s = parseState(JSON.stringify(data.state));
     if (!s) return;
     const hasLocal = !!(lsGet(LSKEY) || lsGet(MASTER));
-    // 저장본이 없거나(브라우저가 지웠거나 새 기기) 손대지 않은 기본 평면도 그대로면 → 최신 공유본 자동 복원
+    const editT = parseInt(lsGet('mp-edit-t') || '0');
+    // 자동 복원 대상: 저장본이 없거나(지워진/새 기기), 기본 평면도 그대로거나,
+    // 이 기기에서 편집한 기록(edit-t)이 전혀 없는 경우(구버전 잔존 데이터) → 최신 공유본으로
     const pristine = JSON.stringify(state) === JSON.stringify(defaultState());
-    if (!hasLocal || pristine){
+    if (!hasLocal || pristine || !editT){
+      if (hasLocal && !pristine) pushUndo();   // 되돌리기로 취소 가능하게
       applySharedState(s, data.t);
       $('#shareNote').textContent = '클라우드의 최신 배치를 자동으로 불러왔어요. ('
         + new Date(data.t).toLocaleString('ko-KR', {month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'}) + ' 저장분)';
-      return;
-    }
-    const editT = parseInt(lsGet('mp-edit-t') || '0');
-    if (!editT){
-      // 자동 동기화 도입 전 기기: 지역 데이터를 함부로 덮지 않고 알림만
-      if (data.t > parseInt(lsGet('mp-shared-t') || '0')){
-        $('#sharePullBtn').classList.add('primary');
-        $('#shareNote').textContent = '클라우드에 새 배치가 있어요! "공유 불러오기"를 누르면 반영됩니다.';
-      }
       return;
     }
     if (data.t > editT){
